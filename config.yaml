@@ -1,0 +1,17 @@
+# config.yaml
+model_list:
+  - model_name: claude-sonnet
+    litellm_params:
+      model: bedrock/us.anthropic.claude-sonnet-4-5-20250929-v1:0 
+      aws_region_name: us-east-1
+  - model_name: llama3-8bq
+    litellm_params:
+      model: together_ai/meta-llama/Llama-3-8b-chat-hf
+      api_key: os.environ/TOGETHER_API_KEY   # read from environment variable
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY   # not used for user auth in Phase 0, but required
+
+litellm_settings:
+  drop_params: true          # ignore extra parameters from clients gracefully
+  set_verbose: false         # keep logs clean
