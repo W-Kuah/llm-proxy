@@ -1,0 +1,35 @@
+# Copy to terraform.tfvars and adjust for your environment.
+# terraform.tfvars itself is gitignored.
+
+region                  = "us-east-1"
+environment             = "dev"
+name                    = "llm-proxy"
+
+# Resource sizing
+lambda_memory_size      = 2048
+lambda_timeout          = 300
+lambda_architecture     = "arm64"
+log_retention_days      = 14
+
+# Image to deploy
+image_tag               = "latest"
+
+# Function URL auth: "AWS_IAM" (default) or "NONE" (master key handles auth)
+function_url_auth_type  = "AWS_IAM"
+
+# Restrict CORS origins (e.g. ["https://app.example.com"]). Keep ["*"] only if intentional.
+cors_allow_origins      = ["*"]
+
+# Bedrock models the Lambda may invoke. MUST match the models in config.yaml.
+bedrock_model_ids       = ["us.anthropic.claude-sonnet-4-5-20250929-v1:0"]
+
+# SSM Parameter Store names for secrets
+# Defaults to /llm-proxy/${environment}/TOGETHER_API_KEY and .../LITELLM_MASTER_KEY.
+# Set these only if your secrets are stored somewhere else.
+# together_api_key_ssm_name = "/llm-proxy/dev/TOGETHER_API_KEY"
+# master_key_ssm_name       = "/llm-proxy/dev/LITELLM_MASTER_KEY"
+
+# Bootstrap secrets from local values (set true + fill keys only for first deploy)
+create_secrets          = false
+together_api_key        = ""
+master_key              = ""

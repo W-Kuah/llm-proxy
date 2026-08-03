@@ -2,11 +2,11 @@
 model_list:
   - model_name: claude-sonnet
     litellm_params:
-      model: bedrock/us.anthropic.claude-sonnet-4-5-20250929-v1:0 
-      aws_region_name: us-east-1
+      model: bedrock/us.anthropic.claude-sonnet-4-5-20250929-v1:0
+      aws_region_name: os.environ/AWS_REGION
   - model_name: llama3-8bq
     litellm_params:
-      model: together_ai/meta-llama/Llama-3-8b-chat-hf
+      model: together_ai/meta-llama/Llama-3.3-70B-Instruct-Turbo
       api_key: os.environ/TOGETHER_API_KEY   # read from environment variable
 
 general_settings:
