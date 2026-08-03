@@ -106,11 +106,10 @@ available at `/v1/chat/completions`; check `/v1/models`.
 Create a `.env` file with your keys (gitignored, safe to keep locally):
 
 ```bash
-TOGETHER_API_KEY=tgp_v1_xxxxxxxxxxxxxxxxxxxx
-LITELLM_MASTER_KEY=sk-your-master-key
-AWS_REGION=us-east-1
-ENVIRONMENT=dev
+cp .env.example .env
 ```
+
+
 
 All four are read from the environment at runtime. `ENVIRONMENT` is used as the
 default basename for SSM secret paths (`/llm-proxy/<env>/...`) — keep it in sync
