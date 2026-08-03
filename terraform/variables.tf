@@ -56,16 +56,28 @@ variable "function_url_auth_type" {
   default     = "AWS_IAM"
 }
 
+variable "enable_function_url" {
+  description = "Create a Lambda Function URL. Set false in regions that don't support function URLs (ap-south-2, ap-southeast-4, eu-south-2, eu-central-2, il-central-1, me-central-1); the API Gateway endpoint is always created."
+  type        = bool
+  default     = true
+}
+
 variable "cors_allow_origins" {
   description = "Allowed CORS origins for the function URL and API Gateway"
   type        = list(string)
   default     = ["*"]
 }
 
+variable "config_path" {
+  description = "Path to the LiteLLM config.yaml that defines the model list (relative to the terraform working directory)"
+  type        = string
+  default     = "../config.yaml"
+}
+
 variable "bedrock_model_ids" {
-  description = "Bedrock model IDs to scope the Lambda invoke permission to (must match config.yaml)"
+  description = "Extra Bedrock model IDs to scope the Lambda invoke permission to, in addition to those derived from config.yaml"
   type        = list(string)
-  default     = ["us.anthropic.claude-sonnet-4-5-20250929-v1:0"]
+  default     = []
 }
 
 variable "together_api_key_ssm_name" {

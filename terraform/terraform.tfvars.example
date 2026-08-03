@@ -1,35 +1,55 @@
 # Copy to terraform.tfvars and adjust for your environment.
 # terraform.tfvars itself is gitignored.
+#
+# Every variable from variables.tf is listed below. Values shown are the
+# defaults, so you only need to set the ones you want to change.
 
-region                  = "us-east-1"
-environment             = "dev"
-name                    = "llm-proxy"
+# ── Deployment basics ──────────────────────────────────────────────────────────
 
-# Resource sizing
-lambda_memory_size      = 2048
-lambda_timeout          = 300
-lambda_architecture     = "arm64"
-log_retention_days      = 14
+region                  = "us-east-1"     # AWS region for all resources + Lambda's AWS_REGION
+environment             = "dev"           # Baked into SSM secret paths (/llm-proxy/<env>/...)
+name                    = "llm-proxy"     # Base name for ECR repo, Lambda, IAM role, API Gateway
 
-# Image to deploy
-image_tag               = "latest"
+# ── Lambda sizing ──────────────────────────────────────────────────────────────
 
-# Function URL auth: "AWS_IAM" (default) or "NONE" (master key handles auth)
-function_url_auth_type  = "AWS_IAM"
+lambda_memory_size      = 2048            # MB (128–10240). Larger = faster for LLM streaming
+lambda_timeout          = 300             # Seconds (1–900). Max for Bedrock long generations
+lambda_architecture     = "arm64"         # "arm64" (Graviton, ~20% cheaper) or "x86_64"
+log_retention_days      = 14              # CloudWatch log retention in days
 
-# Restrict CORS origins (e.g. ["https://app.example.com"]). Keep ["*"] only if intentional.
-cors_allow_origins      = ["*"]
+# ── Image ──────────────────────────────────────────────────────────────────────
 
-# Bedrock models the Lambda may invoke. MUST match the models in config.yaml.
-bedrock_model_ids       = ["us.anthropic.claude-sonnet-4-5-20250929-v1:0"]
+image_tag               = "latest"        # ECR tag to deploy; build-and-push.sh reads this
 
-# SSM Parameter Store names for secrets
-# Defaults to /llm-proxy/${environment}/TOGETHER_API_KEY and .../LITELLM_MASTER_KEY.
-# Set these only if your secrets are stored somewhere else.
+# ── Endpoints ──────────────────────────────────────────────────────────────────
+
+function_url_auth_type  = "AWS_IAM"       # "AWS_IAM" (default) or "NONE" (master key handles auth)
+# Create a Lambda Function URL. Set false in regions without function URL
+# support (ap-south-2, ap-southeast-4, eu-south-2, eu-central-2,
+# il-central-1, me-central-1); the API Gateway endpoint is always created.
+# enable_function_url      = false
+cors_allow_origins      = ["*"]           # Restrict e.g. ["https://app.example.com"]; ["*"] only if intentional
+
+# ── Models ─────────────────────────────────────────────────────────────────────
+
+# Path to the LiteLLM config.yaml that defines the model list (relative to the
+# terraform working directory). Terraform parses it to scope the Lambda's IAM
+# role to every model prefixed "bedrock/" — no manual list needed here.
+config_path             = "../config.yaml"
+
+# Extra Bedrock model IDs to allow, in ADDITION to those derived from config.yaml.
+# Only needed for models that live outside config.yaml; leave empty otherwise.
+# bedrock_model_ids       = ["anthropic.claude-something-else-v1"]
+
+# ── Secrets (SSM Parameter Store) ──────────────────────────────────────────────
+
+# SSM names default to /llm-proxy/<environment>/... — set only to override.
 # together_api_key_ssm_name = "/llm-proxy/dev/TOGETHER_API_KEY"
 # master_key_ssm_name       = "/llm-proxy/dev/LITELLM_MASTER_KEY"
 
-# Bootstrap secrets from local values (set true + fill keys only for first deploy)
+# Bootstrap secrets from local values. Set true + fill the keys below ONLY for
+# the first deploy, then set back to false (or just use the README's
+# `aws ssm put-parameter` step instead).
 create_secrets          = false
 together_api_key        = ""
 master_key              = ""

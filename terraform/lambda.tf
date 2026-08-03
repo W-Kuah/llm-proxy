@@ -35,12 +35,12 @@ resource "aws_lambda_function" "llm_proxy" {
       TOGETHER_API_KEY   = data.aws_ssm_parameter.together_api_key.value
       LITELLM_MASTER_KEY = data.aws_ssm_parameter.master_key.value
       PORT               = "8080"
-      AWS_REGION         = var.region
     }
   }
 }
 
 resource "aws_lambda_function_url" "llm_proxy" {
+  count              = var.enable_function_url ? 1 : 0
   function_name      = aws_lambda_function.llm_proxy.function_name
   authorization_type = var.function_url_auth_type
 

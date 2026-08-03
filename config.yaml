@@ -2,12 +2,36 @@
 model_list:
   - model_name: claude-sonnet
     litellm_params:
-      model: bedrock/us.anthropic.claude-sonnet-4-5-20250929-v1:0
+      model: bedrock/global.anthropic.claude-sonnet-4-5-20250929-v1:0
       aws_region_name: os.environ/AWS_REGION
   - model_name: llama3-8bq
     litellm_params:
       model: together_ai/meta-llama/Llama-3.3-70B-Instruct-Turbo
       api_key: os.environ/TOGETHER_API_KEY   # read from environment variable
+  - model_name: kimi-k3
+    litellm_params:
+      model: together_ai/moonshotai/Kimi-K3
+      api_key: os.environ/TOGETHER_API_KEY
+  - model_name: deepseek-v4
+    litellm_params:
+      model: together_ai/deepseek-ai/DeepSeek-V4-Pro
+      api_key: os.environ/TOGETHER_API_KEY
+  - model_name: glm-5.2
+    litellm_params:
+      model: together_ai/zai-org/GLM-5.2
+      api_key: os.environ/TOGETHER_API_KEY
+  - model_name: kimi-k2.5
+    litellm_params:
+      model: bedrock/moonshotai.kimi-k2.5
+      aws_region_name: os.environ/AWS_REGION
+  - model_name: kimi-k2-thinking
+    litellm_params:
+      model: bedrock/moonshot.kimi-k2-thinking
+      aws_region_name: os.environ/AWS_REGION
+  - model_name: glm-5
+    litellm_params:
+      model: bedrock/zai.glm-5
+      aws_region_name: os.environ/AWS_REGION
 
 general_settings:
   master_key: os.environ/LITELLM_MASTER_KEY   # not used for user auth in Phase 0, but required

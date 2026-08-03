@@ -9,8 +9,8 @@ output "lambda_function_name" {
 }
 
 output "function_url" {
-  description = "Lambda Function URL endpoint for the proxy"
-  value       = aws_lambda_function_url.llm_proxy.function_url
+  description = "Lambda Function URL endpoint for the proxy (empty when disabled)"
+  value       = try(aws_lambda_function_url.llm_proxy[0].function_url, "")
 }
 
 output "api_gateway_url" {
