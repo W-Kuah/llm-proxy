@@ -1,5 +1,5 @@
-# Creates an SSM Parameter Store secret from a local value.
-# Usage: make sure `SSM_NAME` and `SSM_VALUE` are set first.
+# Bootstrap secrets from local values for the first deploy. Controlled by
+# create_secrets=true in terraform.tfvars — use once, then set back to false.
 resource "aws_ssm_parameter" "together_api_key" {
   count = var.create_secrets ? 1 : 0
   name  = local.together_api_key_ssm_name

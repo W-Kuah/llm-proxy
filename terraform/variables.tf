@@ -41,7 +41,7 @@ variable "lambda_architecture" {
 variable "log_retention_days" {
   description = "CloudWatch log retention in days"
   type        = number
-  default     = 14
+  default     = 1
 }
 
 variable "image_tag" {
@@ -51,19 +51,19 @@ variable "image_tag" {
 }
 
 variable "function_url_auth_type" {
-  description = "Auth type for the Lambda function URL (NONE or AWS_IAM)"
+  description = "Auth type for the Lambda function URL. Must be NONE so the origin accepts the viewer's Bearer token; auth happens at the app layer (LiteLLM master key). AWS_IAM is incompatible with OAC signing_behavior = no-override."
   type        = string
-  default     = "AWS_IAM"
+  default     = "NONE"
 }
 
-variable "enable_function_url" {
-  description = "Create a Lambda Function URL. Set false in regions that don't support function URLs (ap-south-2, ap-southeast-4, eu-south-2, eu-central-2, il-central-1, me-central-1); the API Gateway endpoint is always created."
-  type        = bool
-  default     = true
+variable "cloudfront_price_class" {
+  description = "Price class for the CloudFront distribution (PriceClass_100, PriceClass_200, or PriceClass_All). Australia/NZ and South America are only served by PriceClass_All."
+  type        = string
+  default     = "PriceClass_All"
 }
 
 variable "cors_allow_origins" {
-  description = "Allowed CORS origins for the function URL and API Gateway"
+  description = "Allowed CORS origins for the function URL"
   type        = list(string)
   default     = ["*"]
 }

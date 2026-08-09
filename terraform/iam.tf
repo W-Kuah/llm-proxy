@@ -34,7 +34,7 @@ data "aws_iam_policy_document" "lambda" {
       [for id in local.bedrock_model_ids : "arn:aws:bedrock:*:*:inference-profile/${id}"],
       # Also allow the regional variant without the cross-region inference-profile
       # prefix (e.g. anthropic.claude-sonnet-...), which LiteLLM may invoke directly.
-      [for id in local.bedrock_model_ids : "arn:aws:bedrock:*:*:foundation-model/${replace(replace(replace(replace(replace(id, "global.", ""), "apac.", ""), "eu.", ""), "au.", ""), "us.", "")}"],
+      [for id in local.bedrock_model_ids : "arn:aws:bedrock:*:*:foundation-model/${replace(id, "/^(global|apac|eu|au|us)\\./", "")}"],
     )
   }
 
