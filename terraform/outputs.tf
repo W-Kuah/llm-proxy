@@ -9,11 +9,11 @@ output "lambda_function_name" {
 }
 
 output "function_url" {
-  description = "Lambda Function URL endpoint for the proxy (empty when disabled)"
-  value       = try(aws_lambda_function_url.llm_proxy[0].function_url, "")
+  description = "Lambda Function URL endpoint for the proxy (origin of the CloudFront distribution)"
+  value       = aws_lambda_function_url.llm_proxy.function_url
 }
 
-output "api_gateway_url" {
-  description = "API Gateway HTTP API endpoint for the proxy"
-  value       = aws_apigatewayv2_stage.llm_proxy.invoke_url
+output "cloudfront_url" {
+  description = "CloudFront endpoint for the proxy; this is the OpenAI-compatible base URL"
+  value       = "https://${aws_cloudfront_distribution.llm_proxy.domain_name}"
 }

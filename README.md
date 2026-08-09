@@ -15,7 +15,7 @@ deployed as an AWS Lambda container.
 
 ## Overview
 
-- Routes requests to Claude and Kimi (Amazon Bedrock) and Llama 3, DeepSeek, GLM (Together AI)
+- Routes requests to Claude, Kimi, GLM (Amazon Bedrock) and Llama 3.3, Kimi, DeepSeek, GLM (Together AI)
 - Provides one consistent OpenAI-compatible API surface
 - Runs as a serverless container on AWS Lambda (via the AWS Lambda Adapter)
 
@@ -37,16 +37,16 @@ Prereqs: Docker, a `.env` with your keys (see [Environment variables](#environme
 
 ### Model routing (`config.yaml`)
 
-| Model name          | Provider       | Backend model                                              |
-| ------------------- | -------------- | ---------------------------------------------------------- |
-| `claude-sonnet`     | Amazon Bedrock | `global.anthropic.claude-sonnet-4-5-20250929-v1:0` (cross-region `global.` inference profile) |
-| `kimi-k2.5`         | Amazon Bedrock | `moonshotai.kimi-k2.5`                                    |
-| `kimi-k2-thinking`  | Amazon Bedrock | `moonshot.kimi-k2-thinking`                              |
-| `glm-5`             | Amazon Bedrock | `zai.glm-5`                                               |
-| `llama3-8bq`        | Together AI    | `meta-llama/Llama-3.3-70B-Instruct-Turbo`                |
-| `kimi-k3`           | Together AI    | `moonshotai/Kimi-K3`                                     |
-| `deepseek-v4`       | Together AI    | `deepseek-ai/DeepSeek-V4-Pro`                            |
-| `glm-5.2`           | Together AI    | `zai-org/GLM-5.2`                                        |
+| Model name         | Provider       | Backend model                                                                                              |
+| ------------------ | -------------- | ---------------------------------------------------------------------------------------------------------- |
+| `claude-sonnet`    | Amazon Bedrock | `global.anthropic.claude-sonnet-4-5-20250929-v1:0` (cross-region `global.` inference profile)              |
+| `kimi-k2.5`        | Amazon Bedrock | `moonshotai.kimi-k2.5`                                                                                     |
+| `kimi-k2-thinking` | Amazon Bedrock | `moonshot.kimi-k2-thinking`                                                                                |
+| `glm-5`            | Amazon Bedrock | `zai.glm-5`                                                                                                |
+| `llama3.3-70b`     | Together AI    | `meta-llama/Llama-3.3-70B-Instruct-Turbo`                                                                  |
+| `kimi-k3`          | Together AI    | `moonshotai/Kimi-K3`                                                                                       |
+| `deepseek-v4`      | Together AI    | `deepseek-ai/DeepSeek-V4-Pro`                                                                              |
+| `glm-5.2`          | Together AI    | `zai-org/GLM-5.2`                                                                                          |
 
 The **provider prefix** in `litellm_params.model` (before the first `/`) tells
 LiteLLM how to route and tells Terraform whether IAM changes are needed:
@@ -109,8 +109,6 @@ Create a `.env` file with your keys (gitignored, safe to keep locally):
 cp .env.example .env
 ```
 
-
-
 All four are read from the environment at runtime. `ENVIRONMENT` is used as the
 default basename for SSM secret paths (`/llm-proxy/<env>/...`) — keep it in sync
 with Terraform's `environment` var.
@@ -132,7 +130,7 @@ docker run --rm -p 8080:8080 \
 - `-v ~/.aws:/root/.aws:ro` mounts your AWS credentials so the Bedrock routes can authenticate.
 - With **SSO** credentials the container can't auto-pick a profile, so set `AWS_PROFILE` to the profile name in `~/.aws/config` (e.g. `defaultAdmin`). The first Bedrock request can take minutes while SSO creds initialize.
 
-> Verified: both `llama3-8bq` (Together) and `claude-sonnet` (Bedrock) return completions this way.
+> Verified: both `llama3.3-70b` (Together) and `claude-sonnet` (Bedrock) return completions this way.
 
 ### pip (no Docker)
 
@@ -161,16 +159,16 @@ Infrastructure is defined as code in `terraform/`:
 | ----------------------------- | ---------------------------------------------- |
 | ECR repository                | Stores the `llm-proxy` container image         |
 | IAM role + policies           | Lambda execution, Bedrock invoke, ECR pull     |
+| CloudFront distribution        | Public HTTPS front-door, OAC → Lambda Function URL |
 | Lambda function               | Container image, arm64, 2048 MB, 300 s timeout (configurable) |
-| Lambda function URL           | Public HTTPS endpoint (if `enable_function_url = true`) |
-| API Gateway (HTTP API)        | Public HTTPS endpoint (always created)                   |
-| CloudWatch log group          | Logs, 14-day retention (configurable)          |
+| Lambda function URL           | Origin for CloudFront, `RESPONSE_STREAM` invoke mode (SSE streaming) |
+| CloudWatch log group          | Logs, 1-day retention (configurable)                    |
 | SSM Parameter Store (optional)| SecureString keys for `TOGETHER_API_KEY`, `LITELLM_MASTER_KEY` |
 
 ### Prerequisites
 
 - Terraform >= 1.5
-- AWS credentials with permissions for ECR, Lambda, IAM, SSM, CloudWatch
+- AWS credentials with permissions for ECR, Lambda, IAM, SSM, CloudWatch, CloudFront
 - Docker (for the build script); for local-only runs Docker **or** Python 3.9+ with `pip install "litellm[proxy]"`
 - The AWS CLI with a configured profile
 
@@ -198,17 +196,17 @@ Key options (full list in the example file):
 
 | Variable                 | Default            | Meaning                                  |
 | ------------------------ | ------------------ | ---------------------------------------- |
-| `region`                 | `us-east-1`        | AWS region for all resources + Lambda's `AWS_REGION` |
+| `region`                 | `us-east-1`        | AWS region for all resources + Lambda's `AWS_REGION` (must support Lambda Function URLs) |
 | `environment`            | `dev`              | Baked into SSM secret paths (`/llm-proxy/<env>/...`) |
-| `name`                   | `llm-proxy`        | Base name for Lambda/ECR/IAM/API GW resources |
+| `name`                   | `llm-proxy`        | Base name for Lambda/ECR/IAM/CloudFront resources |
 | `image_tag`              | `latest`           | ECR tag to deploy; read by `build-and-push.sh` |
 | `lambda_memory_size`     | `2048`             | Lambda memory in MB                     |
 | `lambda_timeout`         | `300`              | Lambda timeout in seconds               |
 | `lambda_architecture`    | `arm64`            | `arm64` or `x86_64`                     |
-| `log_retention_days`     | `14`               | CloudWatch retention                    |
+| `log_retention_days`     | `1`                | CloudWatch retention                    |
 | `cors_allow_origins`     | `["*"]`            | Allowed origins; restrict in production |
-| `function_url_auth_type` | `AWS_IAM`          | `AWS_IAM` or `NONE` (master key handles auth) |
-| `enable_function_url`    | `true`             | Create a Lambda Function URL; set `false` in regions without function URL support (API Gateway is always created) |
+| `function_url_auth_type` | `NONE`             | Auth is the LiteLLM master key at the app layer; `NONE` is required so CloudFront (OAC `no-override`) can forward the viewer's Bearer token |
+| `cloudfront_price_class` | `PriceClass_All`   | CloudFront edge coverage vs cost        |
 | `config_path`            | `../config.yaml`   | Path to the model list used to derive Bedrock IDs |
 | `bedrock_model_ids`      | `[]`               | Extra Bedrock models (beyond `config.yaml`) the IAM role may invoke |
 
@@ -261,19 +259,23 @@ terraform -chdir=terraform init
 terraform -chdir=terraform apply
 ```
 
-The `api_gateway_url` output is your OpenAI-compatible endpoint. Load `.env` and
+The `cloudfront_url` output is your OpenAI-compatible endpoint. Load `.env` and
 call it with your master key:
 
 ```bash
 set -a && source .env && set +a
-curl -X POST "$(terraform -chdir=terraform output -raw api_gateway_url)/v1/chat/completions" \
+curl -X POST "$(terraform -chdir=terraform output -raw cloudfront_url)/v1/chat/completions" \
   -H "Authorization: Bearer $LITELLM_MASTER_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"model": "deepseek-v4", "messages": [{"role": "user", "content": "Hello"}]}'
+  -d '{"model": "deepseek-v4-pro", "messages": [{"role": "user", "content": "Hello"}]}'
 ```
 
-The `function_url` output is empty unless `enable_function_url = true` (see
-[Operational notes](#operational-notes) for regions that don't support it).
+Streaming (SSE) works the same — pass `"stream": true` and you'll get
+`data:` chunks as they arrive; the Function URL runs in `RESPONSE_STREAM`
+invoke mode with the Web Adapter set to `AWS_LWA_INVOKE_MODE=response_stream`.
+
+> The `function_url` output is the underlying origin — not for direct client use.
+> CloudFront (`cloudfront_url`) is the public endpoint.
 
 > State is stored locally (`terraform/terraform.tfstate`, gitignored). For teams,
 > or any real environment, point Terraform at an S3/DynamoDB backend before applying.
@@ -284,8 +286,8 @@ The `function_url` output is empty unless `enable_function_url = true` (see
 ./scripts/destroy.sh
 ```
 
-Destroy order matters: `destroy.sh` runs `terraform destroy` first (Lambda, API
-Gateway, ECR, IAM, CloudWatch, and any SSM params created via `create_secrets =
+Destroy order matters: `destroy.sh` runs `terraform destroy` first (Lambda,
+CloudFront, ECR, IAM, CloudWatch, and any SSM params created via `create_secrets =
 true`), then deletes the hand-created SSM secrets from step 2, which Terraform
 doesn't track. `force_delete = true` on the ECR repo removes the container image
 too. Your `.env` (with API keys) is left untouched.
@@ -296,22 +298,50 @@ too. Your `.env` (with API keys) is left untouched.
   `build-and-push.sh` + `terraform apply` picks up new images (no stale `:latest`).
 - **Provenance/SBOM:** the build script passes `--provenance=false --sbom=false` —
   without this, AWS Lambda rejects the image media type.
-- **Function URL auth:** default is `AWS_IAM`; set `function_url_auth_type = "NONE"`
-  in `terraform.tfvars` to make it publicly callable (LiteLLM's master key then
-  handles auth).
-- **Function URL region support:** Lambda Function URLs aren't available in
-  `ap-south-2`, `ap-southeast-4`, `eu-south-2`, `eu-central-2`, `il-central-1`, or
-  `me-central-1` — set `enable_function_url = false` there and use the
-  `api_gateway_url` endpoint instead.
+- **Function URL auth:** `function_url_auth_type` must stay `"NONE"`, and the
+  CloudFront OAC signing behavior must stay `no-override` (not `always`). With
+  `always`, CloudFront overwrites the viewer's `Authorization` header with its own
+  SigV4 signature and LiteLLM never sees the Bearer key. With `NONE` + `no-override`,
+  CloudFront forwards the viewer Bearer token straight through; the LiteLLM master
+  key is the only auth boundary (best-effort — the Function URL is publicly
+  callable). Do NOT add `aws_lambda_permission` grants scoped to
+  `cloudfront.amazonaws.com`: auth `NONE` requires a public `*` grant
+  (`lambda:InvokeFunctionUrl` + `lambda:InvokeFunction`), and the CloudFront-only
+  grants aren't matched on unsigned `no-override` origin calls → 403.
+- **Region support:** Lambda Function URLs aren't available in `ap-south-2`,
+  `ap-southeast-4`, `eu-south-2`, `eu-central-2`, `il-central-1`, or
+  `me-central-1` — the stack must deploy in a supported region (this repo uses
+  `ap-southeast-2`).
 - **Bedrock model IDs are region-specific:** cross-region inference profiles are
   named per region (`us.`, `apac.`, `au.`, `global.`, ...). A `us.`-prefixed model
   in `config.yaml` won't resolve outside US regions; use the `global.` variant or
   the plain regional model ID for your deploy region.
 - **Cold start:** the LiteLLM container takes ~30s to boot, exceeding Lambda's 10s
-  init window, so the first request after a cold start returns `503` — retry once
-  the container is warm. This also applies after every `terraform apply`.
+  init window. `AWS_LWA_ASYNC_INIT=true` (set in `terraform/lambda.tf`) makes the
+  AWS Lambda Adapter wait for the app to finish booting instead of returning `503`
+  at the 10s init wall, so the first request after a cold start (and the first
+  request after every `terraform apply`) blocks until LiteLLM is ready rather than
+  `503`ing — it will just take noticeably longer than a warm request.
 - **SSO cold start:** the first Bedrock request after SSO login can take minutes
   while credentials initialize.
-- **Image layout:** the `dockerfile` builds a multi-arch image — LiteLLM on port
-  `8080` behind the AWS Lambda Adapter, exposed via a Lambda function URL and API
-  Gateway.
+- **Image layout:** the `Dockerfile` builds a multi-arch image — LiteLLM on port
+  `8080` behind the AWS Lambda Adapter in `response_stream` mode, exposed via the
+  Function URL with CloudFront in front.
+- **Custom domain:** no domain is wired yet — CloudFront serves from a
+  `*.cloudfront.net` URL. To add one later: import the domain as a Route 53 hosted
+  zone, request an ACM cert (us-east-1), set `aliases` + `viewer_certificate` on
+  the distribution, and add an A/AAAA alias record.
+
+## Smoke checks
+
+Two scripts verify the proxy passes through tool calls and thinking
+intact — useful after a deploy or config change. Both need the gateway URL and
+master key (pull from `terraform output` + `.env` automatically, or set
+`LLM_PROXY_URL` / `LITELLM_MASTER_KEY`).
+
+```bash
+./scripts/verify-tools.sh [model]      # default: deepseek-v4
+./scripts/verify-thinking.sh [model]   # default: kimi-k2-thinking
+```
+
+Each runs both non-streaming and streaming and reports PASS/FAIL.

@@ -6,16 +6,16 @@
 
 # ── Deployment basics ──────────────────────────────────────────────────────────
 
-region                  = "us-east-1"     # AWS region for all resources + Lambda's AWS_REGION
+region                  = "ap-southeast-2" # AWS region for all resources + Lambda's AWS_REGION (must support Lambda Function URLs)
 environment             = "dev"           # Baked into SSM secret paths (/llm-proxy/<env>/...)
-name                    = "llm-proxy"     # Base name for ECR repo, Lambda, IAM role, API Gateway
+name                    = "llm-proxy"     # Base name for ECR repo, Lambda, IAM role, CloudFront
 
 # ── Lambda sizing ──────────────────────────────────────────────────────────────
 
 lambda_memory_size      = 2048            # MB (128–10240). Larger = faster for LLM streaming
 lambda_timeout          = 300             # Seconds (1–900). Max for Bedrock long generations
 lambda_architecture     = "arm64"         # "arm64" (Graviton, ~20% cheaper) or "x86_64"
-log_retention_days      = 14              # CloudWatch log retention in days
+log_retention_days      = 1               # CloudWatch log retention in days (1 is plenty for a personal gateway)
 
 # ── Image ──────────────────────────────────────────────────────────────────────
 
@@ -23,11 +23,16 @@ image_tag               = "latest"        # ECR tag to deploy; build-and-push.sh
 
 # ── Endpoints ──────────────────────────────────────────────────────────────────
 
-function_url_auth_type  = "AWS_IAM"       # "AWS_IAM" (default) or "NONE" (master key handles auth)
-# Create a Lambda Function URL. Set false in regions without function URL
-# support (ap-south-2, ap-southeast-4, eu-south-2, eu-central-2,
-# il-central-1, me-central-1); the API Gateway endpoint is always created.
-# enable_function_url      = false
+# Function URL auth is NONE: CloudFront is the front door, but the real auth
+# boundary is the app layer (LiteLLM master key). It CANNOT be "AWS_IAM" when
+# used with OAC signing_behavior = "no-override": the Function URL would reject
+# the viewer's Bearer Authorization header as an invalid SigV4 signature.
+function_url_auth_type  = "NONE"
+# CloudFront edge coverage vs cost: PriceClass_100 = US/Europe only; PriceClass_200
+# adds Asia/Middle East/Africa; PriceClass_All = every edge (incl. Australia/NZ,
+# South America). Australia is NOT in PriceClass_200 — if you deploy to
+# ap-southeast-2 for local users, use PriceClass_All, else they're served from Asia.
+cloudfront_price_class  = "PriceClass_All"
 cors_allow_origins      = ["*"]           # Restrict e.g. ["https://app.example.com"]; ["*"] only if intentional
 
 # ── Models ─────────────────────────────────────────────────────────────────────

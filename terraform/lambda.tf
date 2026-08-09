@@ -35,14 +35,20 @@ resource "aws_lambda_function" "llm_proxy" {
       TOGETHER_API_KEY   = data.aws_ssm_parameter.together_api_key.value
       LITELLM_MASTER_KEY = data.aws_ssm_parameter.master_key.value
       PORT               = "8080"
+      # LiteLLM takes ~30s to boot, exceeding Lambda's 10s init window; without
+      # this the adapter 503s on cold start instead of waiting for the app.
+      AWS_LWA_ASYNC_INIT = "true"
+      # Stream the HTTP response (SSE) instead of buffering; paired with the
+      # Function URL's RESPONSE_STREAM invoke mode so first token = first bytes.
+      AWS_LWA_INVOKE_MODE = "response_stream"
     }
   }
 }
 
 resource "aws_lambda_function_url" "llm_proxy" {
-  count              = var.enable_function_url ? 1 : 0
   function_name      = aws_lambda_function.llm_proxy.function_name
   authorization_type = var.function_url_auth_type
+  invoke_mode        = "RESPONSE_STREAM"
 
   cors {
     allow_origins = var.cors_allow_origins
