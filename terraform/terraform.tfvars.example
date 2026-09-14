@@ -37,20 +37,15 @@ cors_allow_origins      = ["*"]           # Restrict e.g. ["https://app.example.
 
 # ── Models ─────────────────────────────────────────────────────────────────────
 
-# Path to the LiteLLM config.yaml that defines the model list (relative to the
-# terraform working directory). Terraform parses it to scope the Lambda's IAM
-# role to every model prefixed "bedrock/" — no manual list needed here.
-config_path             = "../config.yaml"
-
-# Extra Bedrock model IDs to allow, in ADDITION to those derived from config.yaml.
-# Only needed for models that live outside config.yaml; leave empty otherwise.
-# bedrock_model_ids       = ["anthropic.claude-something-else-v1"]
+# The model catalog is runtime-managed in DynamoDB (see dynamodb.tf). config.yaml
+# is a seed only — it's read by scripts/seed-models.py, not by Terraform.
 
 # ── Secrets (SSM Parameter Store) ──────────────────────────────────────────────
 
 # SSM names default to /llm-proxy/<environment>/... — set only to override.
 # together_api_key_ssm_name = "/llm-proxy/dev/TOGETHER_API_KEY"
 # master_key_ssm_name       = "/llm-proxy/dev/LITELLM_MASTER_KEY"
+# admin_key_ssm_name         = "/llm-proxy/dev/ADMIN_KEY"
 
 # Bootstrap secrets from local values. Set true + fill the keys below ONLY for
 # the first deploy, then set back to false (or just use the README's
@@ -58,3 +53,4 @@ config_path             = "../config.yaml"
 create_secrets          = false
 together_api_key        = ""
 master_key              = ""
+admin_key               = ""

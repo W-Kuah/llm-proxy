@@ -68,18 +68,6 @@ variable "cors_allow_origins" {
   default     = ["*"]
 }
 
-variable "config_path" {
-  description = "Path to the LiteLLM config.yaml that defines the model list (relative to the terraform working directory)"
-  type        = string
-  default     = "../config.yaml"
-}
-
-variable "bedrock_model_ids" {
-  description = "Extra Bedrock model IDs to scope the Lambda invoke permission to, in addition to those derived from config.yaml"
-  type        = list(string)
-  default     = []
-}
-
 variable "together_api_key_ssm_name" {
   description = "SSM Parameter Store name holding the Together AI API key (empty = /llm-proxy/<environment>/TOGETHER_API_KEY)"
   type        = string
@@ -88,6 +76,12 @@ variable "together_api_key_ssm_name" {
 
 variable "master_key_ssm_name" {
   description = "SSM Parameter Store name holding the LiteLLM master key (empty = /llm-proxy/<environment>/LITELLM_MASTER_KEY)"
+  type        = string
+  default     = ""
+}
+
+variable "admin_key_ssm_name" {
+  description = "SSM Parameter Store name holding the admin key for the /admin/* routes (empty = /llm-proxy/<environment>/ADMIN_KEY)"
   type        = string
   default     = ""
 }
@@ -106,6 +100,12 @@ variable "together_api_key" {
 
 variable "master_key" {
   description = "LiteLLM master key value (used only when create_secrets is true)"
+  type        = string
+  default     = ""
+}
+
+variable "admin_key" {
+  description = "Admin key value for the /admin/* routes (used only when create_secrets is true)"
   type        = string
   default     = ""
 }
