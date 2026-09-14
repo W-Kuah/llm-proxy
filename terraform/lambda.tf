@@ -8,14 +8,6 @@ resource "aws_ecr_repository" "llm_proxy" {
   }
 }
 
-data "aws_ssm_parameter" "together_api_key" {
-  name = local.together_api_key_ssm_name
-}
-
-data "aws_ssm_parameter" "master_key" {
-  name = local.master_key_ssm_name
-}
-
 data "aws_ecr_image" "llm_proxy" {
   repository_name = aws_ecr_repository.llm_proxy.name
   image_tag       = var.image_tag
@@ -32,9 +24,14 @@ resource "aws_lambda_function" "llm_proxy" {
 
   environment {
     variables = {
-      TOGETHER_API_KEY   = data.aws_ssm_parameter.together_api_key.value
-      LITELLM_MASTER_KEY = data.aws_ssm_parameter.master_key.value
-      PORT               = "8080"
+      # SSM parameter *names* (not values) — the entrypoint resolves them at
+      # cold start via ssm:GetParameter, so there's no deploy-time dependency on
+      # the params existing (which broke `terraform destroy`).
+      TOGETHER_API_KEY_SSM_NAME = local.together_api_key_ssm_name
+      MASTER_KEY_SSM_NAME       = local.master_key_ssm_name
+      ADMIN_KEY_SSM_NAME        = local.admin_key_ssm_name
+      MODELS_TABLE              = local.models_table_name
+      PORT                      = "8080"
       # LiteLLM takes ~30s to boot, exceeding Lambda's 10s init window; without
       # this the adapter 503s on cold start instead of waiting for the app.
       AWS_LWA_ASYNC_INIT = "true"

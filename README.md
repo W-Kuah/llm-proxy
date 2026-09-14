@@ -12,6 +12,7 @@ deployed as an AWS Lambda container.
 - [Running locally](#running-locally)
 - [Deployment (Terraform)](#deployment-terraform)
 - [Operational notes](#operational-notes)
+- [Tests](#tests)
 
 ## Overview
 
@@ -35,9 +36,10 @@ Prereqs: Docker, a `.env` with your keys (see [Environment variables](#environme
 
 ## Configuration
 
-### Model routing (`config.yaml`)
+### Model routing (`config.yaml` — seed + local-dev fallback)
 
-| Model name         | Provider       | Backend model                                                                                              |
+The runtime catalog lives in DynamoDB; `config.yaml` seeds it and serves as the
+fallback when `MODELS_TABLE` is unset (local `docker run`). The seeded models:| Model name         | Provider       | Backend model                                                                                              |
 | ------------------ | -------------- | ---------------------------------------------------------------------------------------------------------- |
 | `claude-sonnet`    | Amazon Bedrock | `global.anthropic.claude-sonnet-4-5-20250929-v1:0` (cross-region `global.` inference profile)              |
 | `kimi-k2.5`        | Amazon Bedrock | `moonshotai.kimi-k2.5`                                                                                     |
@@ -49,50 +51,53 @@ Prereqs: Docker, a `.env` with your keys (see [Environment variables](#environme
 | `glm-5.2`          | Together AI    | `zai-org/GLM-5.2`                                                                                          |
 
 The **provider prefix** in `litellm_params.model` (before the first `/`) tells
-LiteLLM how to route and tells Terraform whether IAM changes are needed:
+LiteLLM how to route:
 
 | Provider            | Prefix        | IAM change?                       | API key                    |
 | ------------------- | ------------- | --------------------------------- | -------------------------- |
-| Amazon Bedrock      | `bedrock/`    | Yes — auto-scoped to the role     | none (Lambda's IAM role)   |
+| Amazon Bedrock      | `bedrock/`    | No — role is wildcarded           | none (Lambda's IAM role)   |
 | Together AI         | `together_ai/`| No                                | `TOGETHER_API_KEY` (shared)|
 | Any other provider  | e.g. `openai/`| No                                | needs its own env key      |
 
 ### Adding a model
 
-**Bedrock — edit `config.yaml` only:**
+Models are **runtime-managed in DynamoDB** — `config.yaml` is only a seed and a
+local-dev fallback, not the source of truth. Add a model via the admin API
+(no redeploy):
 
-```yaml
-- model_name: my-claude
-  litellm_params:
-    model: bedrock/global.anthropic.claude-sonnet-...-v1:0
-    aws_region_name: os.environ/AWS_REGION   # only if it differs from the deploy region
+```bash
+curl -X POST "$(terraform -chdir=terraform output -raw cloudfront_url)/admin/models" \
+  -H "Authorization: Bearer $ADMIN_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model_name": "my-claude",
+    "litellm_params": {
+      "model": "bedrock/global.anthropic.claude-sonnet-...-v1:0"
+    }
+  }'
 ```
 
-No key in config — the Lambda's IAM role authenticates. Terraform parses
-`config.yaml` (`terraform/locals.tf`) and scopes the role to every `bedrock/`-
-prefixed model automatically, so nothing else changes.
+**Bedrock** needs no key — the Lambda's IAM role authenticates, and the role is
+wildcarded (`foundation-model/*`, `inference-profile/*`) so new Bedrock models
+work with zero IAM changes.
 
-**Together AI — edit `config.yaml` only:**
+**Together AI** uses the shared `TOGETHER_API_KEY` (already wired SSM → Lambda
+env) via `"api_key": "os.environ/TOGETHER_API_KEY"`.
 
-```yaml
-- model_name: my-llama
-  litellm_params:
-    model: together_ai/meta-llama/Llama-3.3-70B-Instruct-Turbo
-    api_key: os.environ/TOGETHER_API_KEY
-```
+**Any other provider** needs its own key, wired in three places:
 
-Uses the shared `TOGETHER_API_KEY` (already wired SSM → Lambda env). No IAM or
-`terraform.tfvars` change.
+1. SSM Parameter Store: store the key (same `/llm-proxy/<env>/...` pattern).
+2. `app.py`: add a `*_SSM_NAME` → env-var entry to `_SSM_SECRET_ENV_MAP`, and
+   `terraform/lambda.tf`: pass the SSM name into the Lambda `environment`.
+3. Reference it in the model's `litellm_params` as `"api_key": "os.environ/<KEY>"`, then `terraform apply`.
 
-**Any other provider — three changes** (each provider gets its own key):
+The Lambda resolves each `*_SSM_NAME` env var into its value at cold start via
+`ssm:GetParameter` (see `_load_secrets_from_ssm`), so there's no deploy-time
+dependency on the params existing.
 
-1. `config.yaml` with that provider's prefix and a key reference, e.g. `model: openai/gpt-4o`, `api_key: os.environ/OPENAI_API_KEY`
-2. SSM Parameter Store: store `OPENAI_API_KEY` (same `/llm-proxy/<env>/...` pattern)
-3. `terraform/lambda.tf`: add an `aws_ssm_parameter` data source and pass `OPENAI_API_KEY` into the Lambda `environment`, then `terraform apply`
-
-Then rebuild + redeploy (`./scripts/build-and-push.sh`, `terraform apply`), or just
-restart the local container for a local-only test. The new model is immediately
-available at `/v1/chat/completions`; check `/v1/models`.
+The new model is immediately available at `/v1/chat/completions`; check
+`/v1/models`. To seed the catalog from `config.yaml` (one-off migration), run
+`scripts/seed-models.py` after the table exists.
 
 ### Environment variables
 
@@ -100,8 +105,16 @@ available at `/v1/chat/completions`; check `/v1/models`.
 | -------------------- | ---------------------------------------------- |
 | `TOGETHER_API_KEY`   | API key for Together AI                        |
 | `LITELLM_MASTER_KEY` | Master key for LiteLLM (`general_settings`)    |
+| `ADMIN_KEY`          | Bearer key for the `/admin/*` routes           |
+| `MODELS_TABLE`       | DynamoDB table name for the runtime catalog    |
 | `AWS_REGION`         | Region for Bedrock (uses credentials from IAM) |
 | `ENVIRONMENT`        | Optional. Basename for SSM secret paths (`/llm-proxy/<env>/...`); must match Terraform's `environment` var |
+
+In Lambda, the three keys are resolved at cold start from SSM instead of being
+baked in: the function receives `TOGETHER_API_KEY_SSM_NAME`,
+`MASTER_KEY_SSM_NAME`, and `ADMIN_KEY_SSM_NAME` (the parameter *names*), and
+`app.py` reads their values via `ssm:GetParameter`. Locally you pass the values
+directly (`.env`).
 
 Create a `.env` file with your keys (gitignored, safe to keep locally):
 
@@ -137,7 +150,7 @@ docker run --rm -p 8080:8080 \
 ```bash
 pip install "litellm[proxy]"
 set -a && source .env && set +a
-litellm --config config.yaml --port 8080
+python app.py   # falls back to config.yaml when MODELS_TABLE is unset
 ```
 
 Call a model:
@@ -158,12 +171,13 @@ Infrastructure is defined as code in `terraform/`:
 | Resource                      | Description                                    |
 | ----------------------------- | ---------------------------------------------- |
 | ECR repository                | Stores the `llm-proxy` container image         |
-| IAM role + policies           | Lambda execution, Bedrock invoke, ECR pull     |
+| IAM role + policies           | Lambda execution, Bedrock invoke (wildcard), DynamoDB, SSM read, ECR pull |
+| DynamoDB `Models` table       | Runtime model catalog + provider credential refs |
 | CloudFront distribution        | Public HTTPS front-door, OAC → Lambda Function URL |
 | Lambda function               | Container image, arm64, 2048 MB, 300 s timeout (configurable) |
 | Lambda function URL           | Origin for CloudFront, `RESPONSE_STREAM` invoke mode (SSE streaming) |
 | CloudWatch log group          | Logs, 1-day retention (configurable)                    |
-| SSM Parameter Store (optional)| SecureString keys for `TOGETHER_API_KEY`, `LITELLM_MASTER_KEY` |
+| SSM Parameter Store (optional)| SecureString keys for `TOGETHER_API_KEY`, `LITELLM_MASTER_KEY`, `ADMIN_KEY` |
 
 ### Prerequisites
 
@@ -207,12 +221,12 @@ Key options (full list in the example file):
 | `cors_allow_origins`     | `["*"]`            | Allowed origins; restrict in production |
 | `function_url_auth_type` | `NONE`             | Auth is the LiteLLM master key at the app layer; `NONE` is required so CloudFront (OAC `no-override`) can forward the viewer's Bearer token |
 | `cloudfront_price_class` | `PriceClass_All`   | CloudFront edge coverage vs cost        |
-| `config_path`            | `../config.yaml`   | Path to the model list used to derive Bedrock IDs |
-| `bedrock_model_ids`      | `[]`               | Extra Bedrock models (beyond `config.yaml`) the IAM role may invoke |
 
-Bedrock model IDs are derived from `config.yaml` (models prefixed `bedrock/`).
-The build/destroy scripts read `region`, `name`, `image_tag`,
-`lambda_architecture`, and `environment` from `terraform.tfvars` automatically, so
+The model catalog is runtime-managed in DynamoDB, so Bedrock IAM is wildcarded
+(`foundation-model/*`, `inference-profile/*`) and `config.yaml` is a seed only —
+no `config_path`/`bedrock_model_ids` variables exist anymore. The build/destroy
+scripts read `region`, `name`, `image_tag`, `lambda_architecture`, and
+`environment` from `terraform.tfvars` automatically, so
 `NAME`/`IMAGE_TAG`/`PLATFORM`/`REGION` don't need to be passed in.
 
 ### 2. Store secrets in SSM
@@ -223,6 +237,7 @@ Fill in `.env`, then create the SSM parameters (Lambda reads them at runtime):
 set -a && source .env && set +a
 aws ssm put-parameter --name "/llm-proxy/$ENVIRONMENT/TOGETHER_API_KEY" --type SecureString --value "$TOGETHER_API_KEY" --overwrite
 aws ssm put-parameter --name "/llm-proxy/$ENVIRONMENT/LITELLM_MASTER_KEY" --type SecureString --value "$LITELLM_MASTER_KEY" --overwrite
+aws ssm put-parameter --name "/llm-proxy/$ENVIRONMENT/ADMIN_KEY" --type SecureString --value "$ADMIN_KEY" --overwrite
 ```
 
 Names default to `/llm-proxy/${environment}/...`; `ENVIRONMENT` is loaded from
@@ -230,9 +245,9 @@ Names default to `/llm-proxy/${environment}/...`; `ENVIRONMENT` is loaded from
 `environment` var.
 
 Alternatively, let Terraform bootstrap the secrets: set `create_secrets = true`
-and provide `together_api_key`/`master_key` in `terraform.tfvars` on the first
-apply, then set it back to `false`. SSM names can be overridden via
-`together_api_key_ssm_name`/`master_key_ssm_name`.
+and provide `together_api_key`/`master_key`/`admin_key` in `terraform.tfvars` on
+the first apply, then set it back to `false`. SSM names can be overridden via
+`together_api_key_ssm_name`/`master_key_ssm_name`/`admin_key_ssm_name`.
 
 ### 3. Build and push the image
 
@@ -262,6 +277,25 @@ terraform -chdir=terraform apply
 The `cloudfront_url` output is your OpenAI-compatible endpoint. Load `.env` and
 call it with your master key:
 
+### 5. Seed the model catalog (one-time)
+
+After the first `terraform apply` creates the DynamoDB table, seed it from
+`config.yaml`:
+
+```bash
+MODELS_TABLE=llm-proxy-models AWS_REGION=ap-southeast-2 uv run --with boto3 --with PyYAML python3 scripts/seed-models.py
+```
+
+This writes the 8 models from `config.yaml` into the runtime catalog. Subsequent
+deploys don't need this — the table persists.
+
+```bash
+set -a && source .env && set +a
+curl -X GET "$(terraform -chdir=terraform output -raw cloudfront_url)/v1/models" \
+  -H "Authorization: Bearer $LITELLM_MASTER_KEY" \
+  -H "Content-Type: application/json"
+```
+
 ```bash
 set -a && source .env && set +a
 curl -X POST "$(terraform -chdir=terraform output -raw cloudfront_url)/v1/chat/completions" \
@@ -288,9 +322,10 @@ invoke mode with the Web Adapter set to `AWS_LWA_INVOKE_MODE=response_stream`.
 
 Destroy order matters: `destroy.sh` runs `terraform destroy` first (Lambda,
 CloudFront, ECR, IAM, CloudWatch, and any SSM params created via `create_secrets =
-true`), then deletes the hand-created SSM secrets from step 2, which Terraform
-doesn't track. `force_delete = true` on the ECR repo removes the container image
-too. Your `.env` (with API keys) is left untouched.
+true`), then deletes the hand-created SSM secrets from step 2
+(`TOGETHER_API_KEY`, `LITELLM_MASTER_KEY`, `ADMIN_KEY`), which Terraform doesn't
+track. `force_delete = true` on the ECR repo removes the container image too.
+Your `.env` (with API keys) is left untouched.
 
 ## Operational notes
 
@@ -331,6 +366,37 @@ too. Your `.env` (with API keys) is left untouched.
   `*.cloudfront.net` URL. To add one later: import the domain as a Route 53 hosted
   zone, request an ACM cert (us-east-1), set `aliases` + `viewer_certificate` on
   the distribution, and add an A/AAAA alias record.
+
+## Tests
+
+### Unit tests
+
+`tests/test_app.py` covers the admin model-management endpoints (add / disable /
+enable / delete) and the secret-resolution logic, using `moto` to mock DynamoDB
+and an injectable `get_secret` to avoid real SSM calls. Deps are in
+`requirements-dev.txt` (`pytest`, `moto`, `PyYAML`).
+
+```bash
+# one-off, no venv needed (uv fetches the deps):
+uv run --with pytest --with moto --with PyYAML python -m pytest tests/ -q
+
+# or with a venv:
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements-dev.txt
+pytest tests/ -q
+```
+
+### Admin endpoint smoke test
+
+`scripts/verify-admin.sh` spins up its own `dynamodb-local` + proxy stack and
+exercises the admin endpoints end-to-end (auth, add, disable, enable, delete,
+and the 400/404 cases), then tears everything down.
+
+```bash
+./scripts/verify-admin.sh
+# Env: IMAGE (default llm-proxy:latest), ADMIN_KEY (default test-admin-key),
+#      APP_PORT (default 8080)
+```
 
 ## Smoke checks
 

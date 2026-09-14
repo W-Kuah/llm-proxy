@@ -17,12 +17,13 @@ REGION="${AWS_REGION:-$(tfvar "$TFVARS" region us-east-1)}"
 ENVIRONMENT="${ENVIRONMENT:-$(tfvar "$TFVARS" environment dev)}"
 SSM_TOGETHER="${TOGETHER_API_KEY_SSM_NAME:-/llm-proxy/${ENVIRONMENT}/TOGETHER_API_KEY}"
 SSM_MASTER="${MASTER_KEY_SSM_NAME:-/llm-proxy/${ENVIRONMENT}/LITELLM_MASTER_KEY}"
+SSM_ADMIN="${ADMIN_KEY_SSM_NAME:-/llm-proxy/${ENVIRONMENT}/ADMIN_KEY}"
 
 echo "==> Destroying Terraform-managed resources..."
 terraform -chdir="$REPO_ROOT/terraform" destroy -auto-approve
 
 echo "==> Deleting hand-created SSM secrets (if present)..."
-for name in "$SSM_TOGETHER" "$SSM_MASTER"; do
+for name in "$SSM_TOGETHER" "$SSM_MASTER" "$SSM_ADMIN"; do
   if aws ssm get-parameter --name "$name" --region "$REGION" &>/dev/null; then
     aws ssm delete-parameter --name "$name" --region "$REGION"
     echo "    deleted $name"

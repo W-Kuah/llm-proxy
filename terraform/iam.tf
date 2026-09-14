@@ -28,14 +28,35 @@ data "aws_iam_policy_document" "lambda" {
       "bedrock:InvokeInferenceProfile",
       "bedrock:InvokeInferenceProfileWithResponseStream",
     ]
-    resources = concat(
-      # Build foundation-model and inference-profile ARNs from the shared model list.
-      [for id in local.bedrock_model_ids : "arn:aws:bedrock:*:*:foundation-model/${id}"],
-      [for id in local.bedrock_model_ids : "arn:aws:bedrock:*:*:inference-profile/${id}"],
-      # Also allow the regional variant without the cross-region inference-profile
-      # prefix (e.g. anthropic.claude-sonnet-...), which LiteLLM may invoke directly.
-      [for id in local.bedrock_model_ids : "arn:aws:bedrock:*:*:foundation-model/${replace(id, "/^(global|apac|eu|au|us)\\./", "")}"],
-    )
+    # Wildcard: models are now runtime-managed (DynamoDB catalog), so the role
+    # can't be scoped to a static list derived from config.yaml. Trade-off: loses
+    # least-privilege scoping in exchange for zero-redeploy Bedrock model adds.
+    resources = [
+      "arn:aws:bedrock:*:*:foundation-model/*",
+      "arn:aws:bedrock:*:*:inference-profile/*",
+    ]
+  }
+
+  statement {
+    effect = "Allow"
+    actions = [
+      "ssm:GetParameter",
+    ]
+    # Runtime credential resolution: the entrypoint resolves each model's
+    # credentialRef (an SSM key name) into an api_key at request time.
+    resources = ["arn:aws:ssm:${var.region}:*:parameter/llm-proxy/*"]
+  }
+
+  statement {
+    effect = "Allow"
+    actions = [
+      "dynamodb:GetItem",
+      "dynamodb:Query",
+      "dynamodb:PutItem",
+      "dynamodb:UpdateItem",
+      "dynamodb:DeleteItem",
+    ]
+    resources = [aws_dynamodb_table.models.arn]
   }
 
   statement {

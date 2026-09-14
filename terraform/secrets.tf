@@ -13,3 +13,10 @@ resource "aws_ssm_parameter" "master_key" {
   type  = "SecureString"
   value = var.master_key
 }
+
+resource "aws_ssm_parameter" "admin_key" {
+  count = var.create_secrets ? 1 : 0
+  name  = local.admin_key_ssm_name
+  type  = "SecureString"
+  value = var.admin_key
+}
